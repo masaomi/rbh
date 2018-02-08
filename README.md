@@ -1,4 +1,4 @@
-# rbh
+# RBH
 
 * A wrapper Ruby script to generate reciprocal NCBI BLAST best hits or one way hits.
 
@@ -7,14 +7,15 @@
 * NCBI BLAST+
 * https://blast.ncbi.nlm.nih.gov/Blast.cgi
 
-# Required Gem
+# Required Gem
 
 * Bioruby (bio >= 1.5.1)
 * Optparse_ex (optparse_ex >= 0.0.4)
 
 # Usage
 
-* Usage: rbh [options]
+```
+$ rbh [options]
     -1, --fasta1 file.fasta          Fasta file (required)
     -2, --fasta2 file.fasta          Fasta file (required)
     -o, --one_way                    One way blast best hit (fasta1:query, fast2:database) (default:off, reciprocal best hit)
@@ -25,3 +26,8 @@
     -r, --result directory           Output directory (default:.)
     -e, --evalue evalue              Evalue used for blast (default:1.0e-15)
     -b, --blast_bin_dir dir          Blast binary directory path (default:/usr/bin)
+
+ex.
+$ rbh -1 fast1.fa -2 fasta2.fa -t 8    #=> reciprocal best hits between fasta1.fa and fasta2.fa
+$ rbh -1 fast1.fa -2 fasta2.fa -t 8 -o #=> one way blast hits, fasta1.fa as query and fasta2.fa as database
+```
