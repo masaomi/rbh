@@ -1,0 +1,265 @@
+#!/usr/bin/env ruby
+# encoding: utf-8
+# Masa 
+Version = '20180208-141409'
+
+require 'bio'
+require 'fileutils'
+require 'optparse_ex'
+
+EVALUE_DEFAULT = 1e-15
+MAX_TARGET_DEFAULT = 5
+EXON_AVE_DEFAULT = 200
+
+blast_bin_dir = File.dirname(`which blastn`)
+if blast_bin_dir == '.'
+  blast_bin_dir = "Not found"
+end
+opt = OptionParser.new do |o|
+  o.banner = "Last update: #{o.version}\nUsage: #{File.basename(__FILE__)} [options]"
+  o.on(:fasta1, '-1 file.fasta', '--fasta1', String, 'Fasta file (required)')
+  o.on(:fasta2, '-2 file.fasta', '--fasta2', String, 'Fasta file (required)')
+  o.on(:oneway, '-o', '--one_way', 'One way blast best hit (fasta1:query, fast2:database) (default:off, reciprocal best hit)')
+  o.on(:threads, '-t num', '--threads', Integer, 'Num of threads (default:1)')
+  o.on(:exonave, EXON_AVE_DEFAULT, '-e ave', '--exonave', Integer, "Average Exon length (default:#{EXON_AVE_DEFAULT}, used for filtering blast hit alignment length)")
+  o.on(:outfmt6, '-f', '--outfmt6', 'outfmt 6 (default:non)')
+  o.on(:maxtarget, MAX_TARGET_DEFAULT, '-m max', '--maxtarget', Integer, "max_target_seqs (default:#{MAX_TARGET_DEFAULT})")
+  o.on(:result_dir, '.', '-r directory', '--result', String, 'Output directory (default:.)')
+  o.on(:evalue, EVALUE_DEFAULT, '-e evalue', '--evalue', Float, "Evalue used for blast (default:#{EVALUE_DEFAULT})")
+  o.on(:blast_bin_dir, blast_bin_dir, '-b dir', '--blast_bin_dir', String, "Blast binary directory path (default:#{blast_bin_dir})")
+  o.parse!(ARGV)
+end
+unless opt.fasta1 and opt.fasta2
+  print opt.help
+  exit
+end
+if opt.blast_bin_dir == '.'
+  puts "WARNING:"
+  puts " NCBI blast binaries are not found"
+  puts " Please set --blast_bin_dir to NCBI blast bin path"
+  puts
+  print opt.help
+  exit
+end
+blast_ver_check =-> (){
+  command = "blastn -version"
+  version = `#{command}`.split("\n").first.split.last
+  puts "NCBI BLAST ver. #{version}"
+  puts "BLAST BIN PATH=#{blast_bin_dir}"
+}
+blast_ver_check.()
+
+input_fa1 = opt.fasta1
+input_fa2 = opt.fasta2
+ONEWAY = opt.oneway
+THREADS = opt.threads
+RESULT_DIR = opt.result_dir
+EVALUE = opt.evalue
+EXON_AVE = opt.exonave
+MAX_TARGET = opt.maxtarget
+OUTFMT6 = opt.outfmt6
+BLAST_BIN_DIR = opt.blast_bin_dir
+FileUtils.mkdir_p RESULT_DIR
+
+def check_fasta_type(fasta)
+  seq = ''
+  seq_len = 0
+  Bio::FlatFile.open(fasta).each do |e|
+    seq = e.seq
+    seq_len = seq.length
+    "ATGCNatgcn".split(//).each do |nuc|
+      seq = seq.delete(nuc)
+    end
+    break
+  end
+  ratio = seq.length.to_f/seq_len
+  if ratio < 0.1
+    'n'
+  else
+    'p'
+  end
+end
+
+first_type = check_fasta_type(input_fa1)
+second_type = check_fasta_type(input_fa2)
+types = first_type+second_type
+first_blast_command = case types
+                      when 'nn'
+                        "#{BLAST_BIN_DIR}/blastn"
+                      when 'np'
+                        "#{BLAST_BIN_DIR}/blastx"
+                      when 'pp'
+                        "#{BLAST_BIN_DIR}/blastp"
+                      end
+second_blast_command = case types
+                      when 'nn'
+                        "#{BLAST_BIN_DIR}/blastn"
+                      when 'np'
+                        "#{BLAST_BIN_DIR}/tblastn"
+                      when 'pp'
+                        "#{BLAST_BIN_DIR}/blastp"
+                      end
+
+if THREADS
+  first_blast_command += " -num_threads #{THREADS}"
+  second_blast_command += " -num_threads #{THREADS}"
+end
+
+def dbfiles_exist?(input_fa)
+  flag = true
+  postfix = ["hd", "hi", "hr", "in", "og", "sd", "si", "sq"]
+  postfix.each do |pf|
+    if Dir["#{input_fa}*#{pf}"].to_a.empty?
+      flag = false
+      break
+    end
+  end
+  flag
+end
+def makedb_command(type)
+  case type
+  when 'n'
+    "#{BLAST_BIN_DIR}/makeblastdb -dbtype nucl -hash_index"
+  when 'p'
+    "#{BLAST_BIN_DIR}/makeblastdb -dbtype prot -hash_index"
+  end
+end
+
+first_makedb_command = makedb_command(first_type)
+second_makedb_command = makedb_command(second_type)
+
+def log_and_run(command)
+  puts command
+  `#{command}`
+end
+
+# make blastdb
+unless ONEWAY
+  unless dbfiles_exist?(input_fa1)
+    command = first_makedb_command + " -in #{input_fa1}"
+    log_and_run command
+  else
+    puts "# skip makedb_command for #{input_fa1}"
+  end
+end
+
+unless dbfiles_exist?(input_fa2)
+  command = second_makedb_command + " -in #{input_fa2}"
+  log_and_run command
+else
+  puts "# skip makedb_command for #{input_fa2}"
+end
+
+# blast search
+out_txt1 = File.basename(input_fa1) + "_on_" + File.basename(input_fa2) + ".txt"
+out_txt1 = File.join(RESULT_DIR, out_txt1)
+unless File.exist?(out_txt1)
+  command = if OUTFMT6
+              first_blast_command + " -query #{input_fa1} -db #{input_fa2} -out #{out_txt1} -evalue #{EVALUE} -outfmt 6 -max_target_seqs #{MAX_TARGET}" 
+            else
+              first_blast_command + " -query #{input_fa1} -db #{input_fa2} -out #{out_txt1} -evalue #{EVALUE}" 
+            end
+  log_and_run command
+else
+  puts "# skip blast #{input_fa1} on #{input_fa2}"
+end
+
+unless ONEWAY
+  out_txt2 = File.basename(input_fa2) + "_on_" + File.basename(input_fa1) + ".txt"
+  out_txt2 = File.join(RESULT_DIR, out_txt2)
+  unless File.exist?(out_txt2)
+  command = if OUTFMT6
+              second_blast_command + " -query #{input_fa2} -db #{input_fa1} -out #{out_txt2} -evalue #{EVALUE} -outfmt 6 -max_target_seqs #{MAX_TARGET}" 
+            else
+              second_blast_command + " -query #{input_fa2} -db #{input_fa1} -out #{out_txt2} -evalue #{EVALUE}" 
+            end
+    log_and_run command
+  else
+    puts "# skip blast #{input_fa2} on #{input_fa1}"
+  end
+end
+
+# load blast result
+def blast_besthits(blast_result)
+  input = open(blast_result)
+  if OUTFMT6
+    query = nil
+    targets = []
+    while line=input.gets
+      new_query, target, xxx, alignment_length, *others = line.chomp.split
+      if query and query != new_query and !targets.empty?
+        yield [query, targets.uniq.join(",")]
+        query = nil
+        targets = []
+      end
+      if alignment_length.to_i > EXON_AVE
+        unless query
+          query = new_query
+        end
+        targets << target
+      end
+    end
+    if query and !targets.empty?
+      yield [query, targets.uniq.join(",")]
+    end
+  else
+    query = nil
+    target = nil
+    targets = []
+    top_count = 0
+    while line=input.gets
+      if line =~ /Query=(.+)/
+        if query and !targets.empty?
+          yield [query, targets.join(",")]
+        end
+        query = $1.strip.split.first
+        targets = []
+        target = nil
+        top_count = 0
+      elsif line =~ /^>/ 
+        target = line.gsub(/>/,'').chomp.split.first.strip
+        top_count += 1
+      elsif line =~ /Identities = \d+\/(\d+) .+,/ and top_count < MAX_TARGET
+        if alignment_length = $1.to_i and alignment_length > EXON_AVE and query and target
+          targets << target
+          target = nil
+        end
+      end
+    end
+    if query and !targets.empty?
+      yield [query, targets.join(",")]
+    end
+  end
+  input.close
+end
+
+unless ONEWAY
+  second2first_besthit = {} 
+  blast_besthits(out_txt2) do |query, target|
+    second2first_besthit[query] = target.split(/,/).first
+  end
+end
+
+# RBH output
+unless ONEWAY
+  out_file = File.basename(input_fa1).split('.').first + "_on_" + File.basename(input_fa2).split('.').first + ".rbh"
+  out_file = File.join(RESULT_DIR, out_file)
+  open(out_file, "w") do |out|
+    out.print "#", input_fa1, ",", input_fa2, "\n"
+    blast_besthits(out_txt1) do |query, target|
+      first_target = target.split(/,/).first
+      if second2first_besthit[first_target] == query
+        out.puts [query, first_target].join("\t")
+      end
+    end
+  end
+else
+  out_file = File.basename(input_fa1).split('.').first + "_on_" + File.basename(input_fa2).split('.').first + ".obh"
+  out_file = File.join(RESULT_DIR, out_file)
+  open(out_file, "w") do |out|
+    out.print "#", input_fa1, ",", input_fa2, "\n"
+    blast_besthits(out_txt1) do |query, target|
+      out.puts [query, target].join("\t")
+    end
+  end
+end
