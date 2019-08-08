@@ -18,6 +18,7 @@
 $ rbh [options]
     -1, --fasta1 file.fasta          Fasta file (required)
     -2, --fasta2 file.fasta          Fasta file (required)
+        --[no-]tblastx               Use tblastx to nuc to nuc search (default: false, meaning without this option, use blastn)
     -o, --one_way                    One way blast best hit (fasta1:query, fast2:database) (default:off, reciprocal best hit)
     -t, --threads num                Num of threads (default:1)
         --exonave ave                Average Exon length (default:200, used for filtering blast hit alignment length)

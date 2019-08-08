@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # encoding: utf-8
 # Masa 
-Version = '20180208-141409'
+Version = '20190808-112528'
 
 require 'bio'
 require 'fileutils'
@@ -19,6 +19,7 @@ opt = OptionParser.new do |o|
   o.banner = "Last update: #{o.version}\nUsage: #{File.basename(__FILE__)} [options]"
   o.on(:fasta1, '-1 file.fasta', '--fasta1', String, 'Fasta file (required)')
   o.on(:fasta2, '-2 file.fasta', '--fasta2', String, 'Fasta file (required)')
+  o.on(:tblastx, '--[no-]tblastx', 'Use tblastx to nuc to nuc search (default: false, meaning without this option, use blastn)')
   o.on(:oneway, '-o', '--one_way', 'One way blast best hit (fasta1:query, fast2:database) (default:off, reciprocal best hit)')
   o.on(:threads, '-t num', '--threads', Integer, 'Num of threads (default:1)')
   o.on(:exonave, EXON_AVE_DEFAULT, '-e ave', '--exonave', Integer, "Average Exon length (default:#{EXON_AVE_DEFAULT}, used for filtering blast hit alignment length)")
@@ -29,6 +30,7 @@ opt = OptionParser.new do |o|
   o.on(:blast_bin_dir, blast_bin_dir, '-b dir', '--blast_bin_dir', String, "Blast binary directory path (default:#{blast_bin_dir})")
   o.parse!(ARGV)
 end
+
 unless opt.fasta1 and opt.fasta2
   print opt.help
   exit
@@ -99,6 +101,18 @@ second_blast_command = case types
                       when 'pp'
                         "#{BLAST_BIN_DIR}/blastp"
                       end
+
+if opt.tblastx 
+  if types != 'nn'
+    warn "WARNING:"
+    warn "Input fasta files (Query/Database) must be nucleotides"
+    print opt.help
+    exit
+  else
+    first_blast_command = "#{BLAST_BIN_DIR}/tblastx"
+    second_blast_command = "#{BLAST_BIN_DIR}/tblastx"
+  end
+end
 
 if THREADS
   first_blast_command += " -num_threads #{THREADS}"
