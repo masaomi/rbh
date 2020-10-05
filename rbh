@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # encoding: utf-8
 # Masa 
-Version = '20190808-112528'
+Version = '20201005-161445'
 
 require 'bio'
 require 'fileutils'
@@ -44,7 +44,12 @@ if opt.blast_bin_dir == '.'
   exit
 end
 blast_ver_check =-> (){
-  command = "blastn -version"
+  command = if opt.blast_bin_dir
+              blast_bin_dir = opt.blast_bin_dir
+              "#{File.join(blast_bin_dir, "blastn -version")}"
+            else
+              "blastn -version"
+            end
   version = `#{command}`.split("\n").first.split.last
   puts "NCBI BLAST ver. #{version}"
   puts "BLAST BIN PATH=#{blast_bin_dir}"
