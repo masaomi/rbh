@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # encoding: utf-8
 # Masa 
-Version = '20201005-161445'
+Version = '20211023-052753'
 
 require 'bio'
 require 'fileutils'
@@ -28,6 +28,7 @@ opt = OptionParser.new do |o|
   o.on(:result_dir, '.', '-r directory', '--result', String, 'Output directory (default:.)')
   o.on(:evalue, EVALUE_DEFAULT, '-e evalue', '--evalue', Float, "Evalue used for blast (default:#{EVALUE_DEFAULT})")
   o.on(:blast_bin_dir, blast_bin_dir, '-b dir', '--blast_bin_dir', String, "Blast binary directory path (default:#{blast_bin_dir})")
+  o.on(:max_file_sz, '-m max_file_sz', '--max_file_sz', String, "Maximum file size for BLAST database files (for a large genome, default:1GB, max: 4GB)")
   o.parse!(ARGV)
 end
 
@@ -124,9 +125,15 @@ if THREADS
   second_blast_command += " -num_threads #{THREADS}"
 end
 
+OPTION_MAX_FILE_SZ = if sz=opt.max_file_sz
+                       " -max_file_sz #{sz}"
+                     else
+                       ""
+                     end
+
 def dbfiles_exist?(input_fa)
   flag = true
-  postfix = ["hd", "hi", "hr", "in", "og", "sd", "si", "sq"]
+  postfix = ["hd", "hi", "hr", "in", "og"]
   postfix.each do |pf|
     if Dir["#{input_fa}*#{pf}"].to_a.empty?
       flag = false
@@ -138,9 +145,9 @@ end
 def makedb_command(type)
   case type
   when 'n'
-    "#{BLAST_BIN_DIR}/makeblastdb -dbtype nucl -hash_index"
+    "#{BLAST_BIN_DIR}/makeblastdb -dbtype nucl -hash_index#{OPTION_MAX_FILE_SZ}"
   when 'p'
-    "#{BLAST_BIN_DIR}/makeblastdb -dbtype prot -hash_index"
+    "#{BLAST_BIN_DIR}/makeblastdb -dbtype prot -hash_index#{OPTION_MAX_FILE_SZ}"
   end
 end
 
